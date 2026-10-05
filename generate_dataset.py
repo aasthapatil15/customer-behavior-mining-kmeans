@@ -1,32 +1,22 @@
-import random
+import numpy as np
 import pandas as pd
 
-spam_phrases = [
-    "URGENT: Claim your $1000 prize now! Call 09061743832",
-    "Congratulations! You won a FREE lottery ticket. Visit http://win-now.xyz",
-    "Alert: Your account has been suspended. Click here to verify http://bank-update.cc",
-    "Earn $500 daily working from home! WhatsApp +1234567890",
-    "Final reminder: 50% discount expires today! Click http://deal-grab.biz",
-]
+np.random.seed(42)
+n_samples = 5000
 
-ham_phrases = [
-    "Hey, are we still meeting for lunch today at 1 PM?",
-    "Please find attached the notes for theory of computation lecture.",
-    "Can you share the assignment submission link?",
-    "Call me once you reach the campus.",
-    "The meeting has been rescheduled to tomorrow morning at 10 AM.",
-]
+# Generating realistic customer purchase metrics across 5,000 shoppers
+age = np.random.randint(18, 70, size=n_samples)
+annual_income_k = np.random.randint(15, 140, size=n_samples)
+spending_score = np.random.randint(1, 100, size=n_samples)
+purchase_frequency = np.random.randint(1, 50, size=n_samples)
 
-data = []
-for i in range(5000):
-    if random.random() < 0.25:  # ~25% spam
-        text = random.choice(spam_phrases) + f" [Ref:{random.randint(1000, 9999)}]"
-        label = "Spam"
-    else:
-        text = random.choice(ham_phrases) + f" [ID:{random.randint(1000, 9999)}]"
-        label = "Ham"
-    data.append({"Message_ID": i + 1, "Text": text, "True_Label": label})
+data = pd.DataFrame({
+    "Customer_ID": [f"CUST_{i+1:05d}" for i in range(n_samples)],
+    "Age": age,
+    "Annual_Income_k$": annual_income_k,
+    "Spending_Score_1_to_100": spending_score,
+    "Annual_Purchases": purchase_frequency
+})
 
-df = pd.DataFrame(data)
-df.to_csv("dataset_5000.csv", index=False)
-print("5,000-row dataset generated successfully!")
+data.to_csv("dataset_5000.csv", index=False)
+print("5,000 Data Mining Customer Records Generated Successfully!")
