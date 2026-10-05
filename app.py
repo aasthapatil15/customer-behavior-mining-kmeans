@@ -22,12 +22,33 @@ def regex_scanner(text):
             return "Flagged (Spam)", pattern_name
     return "Clean (Ham)", "None"
 
-# Sidebar: Dataset selection & Custom Teacher Upload
-st.sidebar.header("Dataset Options")
+# Sidebar: Dataset selection & Custom CSV Upload
+st.sidebar.header("Dataset Configuration")
 upload_choice = st.sidebar.radio(
-    "Choose Data Source:",
-    ("Use Built-in 5,000 Records", "Upload Teacher's Custom CSV")
+    "Select Input Source:",
+    ("Corpus Evaluation (5,000 Records)", "Upload Custom CSV File")
 )
+
+df = None
+
+if upload_choice == "Upload Custom CSV File":
+    uploaded_file = st.sidebar.file_uploader("Upload CSV Dataset", type=["csv"])
+    if uploaded_file is not None:
+        raw_df = pd.read_csv(uploaded_file)
+        possible_cols = [c for c in raw_df.columns if c.lower() in ["text", "message", "content", "msg", "sms"]]
+        selected_col = possible_cols[0] if possible_cols else raw_df.columns[0]
+        
+        df = pd.DataFrame({
+            "Message_ID": range(1, len(raw_df) + 1),
+            "Text": raw_df[selected_col].astype(str)
+        })
+        st.sidebar.success(f"Loaded {len(df):,} records from column: '{selected_col}'")
+    else:
+        st.info("Awaiting CSV file upload...")
+else:
+    if not os.path.exists("dataset_5000.csv"):
+        import generate_dataset
+    df = pd.read_csv("dataset_5000.csv")
 
 df = None
 
