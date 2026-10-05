@@ -100,14 +100,19 @@ if df is not None:
         st.dataframe(summary, use_container_width=True)
 
         # 5. Live Prediction for Single Customer
+       # 5. Live Prediction for Single Customer (Direct Type Boxes)
         st.markdown("---")
         st.subheader("Predict Segment for a New Data Instance")
+        
         col_a, col_b = st.columns(2)
-        val_x = col_a.number_input(f"Enter {feat_x}:", value=float(df[feat_x].mean()))
-        val_y = col_b.number_input(f"Enter {feat_y}:", value=float(df[feat_y].mean()))
+        val_x_str = col_a.text_input(f"Enter {feat_x}:", value=f"{df[feat_x].mean():.2f}")
+        val_y_str = col_b.text_input(f"Enter {feat_y}:", value=f"{df[feat_y].mean():.2f}")
 
-        new_point_scaled = scaler.transform([[val_x, val_y]])
-        predicted_cluster = kmeans.predict(new_point_scaled)[0]
-        st.success(f"This record is classified into: **Cluster {predicted_cluster}**")
-    else:
-        st.error("Please provide a dataset with at least 2 numerical columns.")
+        try:
+            val_x = float(val_x_str)
+            val_y = float(val_y_str)
+            new_point_scaled = scaler.transform([[val_x, val_y]])
+            predicted_cluster = kmeans.predict(new_point_scaled)[0]
+            st.success(f"This record is classified into: **Cluster {predicted_cluster}**")
+        except ValueError:
+            st.warning("Please enter a valid numeric value.")
