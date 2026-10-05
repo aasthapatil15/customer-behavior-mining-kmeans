@@ -1,17 +1,26 @@
-import os
 import pandas as pd
-import plotly.express as px
+import numpy as np
+import streamlit as st
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-import streamlit as st
-
-# Ensure dataset exists
-if not os.path.exists("dataset_5000.csv"):
-    import generate_dataset
+import plotly.express as px
 
 st.set_page_config(page_title="Customer Segmentation & Behavior Mining", layout="wide")
 st.title("Customer Behavior Mining & Segmentation Dashboard")
 st.caption("Data Mining & Warehousing: Unit II (Pre-processing/Visualization) & Unit IV (Partitioning Clustering)")
+
+# Function to generate customer dataset
+@st.cache_data
+def get_customer_data():
+    np.random.seed(42)
+    n = 5000
+    return pd.DataFrame({
+        "Customer_ID": [f"CUST_{i+1:05d}" for i in range(n)],
+        "Age": np.random.randint(18, 70, size=n),
+        "Annual_Income_k$": np.random.randint(15, 140, size=n),
+        "Spending_Score_1_to_100": np.random.randint(1, 100, size=n),
+        "Annual_Purchases": np.random.randint(1, 50, size=n)
+    })
 
 # Sidebar Controls
 st.sidebar.header("Data Configuration")
@@ -29,7 +38,7 @@ if data_source == "Upload Custom CSV File":
     else:
         st.info("Awaiting CSV file...")
 else:
-    df = pd.read_csv("dataset_5000.csv")
+    df = get_customer_data()
 
 if df is not None:
     # 1. Dataset Overview
