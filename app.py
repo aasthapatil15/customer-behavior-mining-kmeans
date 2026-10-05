@@ -57,8 +57,6 @@ if df is not None:
             help="Click to download the complete 5,000 dataset for offline inspection or WEKA analysis."
         )
 
-    with st.expander("View Raw Data Preview"):
-        st.dataframe(df.head(100), use_container_width=True)
 
     # 2. Pre-processing & Feature Selection
     numeric_cols = df.select_dtypes(include=["float64", "int64"]).columns.tolist()
