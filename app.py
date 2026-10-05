@@ -43,10 +43,19 @@ else:
 if df is not None:
     # 1. Dataset Overview
     st.markdown("### 1. Data Exploration & Overview (Unit II)")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Records Mined", f"{len(df):,}")
-    c2.metric("Features Extracted", len(df.columns))
-    c3.metric("Missing Values", int(df.isnull().sum().sum()))
+    with st.expander("View Raw Data Preview"):
+        st.dataframe(df.head(100), use_container_width=True)
+        st.caption("Displaying initial 100 rows preview for browser speed optimization.")
+        
+        # One-click download button for full 5,000 dataset
+        csv_bytes = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Full 5,000 Records Dataset (.csv)",
+            data=csv_bytes,
+            file_name="customer_segmentation_5000_records.csv",
+            mime="text/csv",
+            help="Click to download the complete 5,000 dataset for offline inspection or WEKA analysis."
+        )
 
     with st.expander("View Raw Data Preview"):
         st.dataframe(df.head(100), use_container_width=True)
