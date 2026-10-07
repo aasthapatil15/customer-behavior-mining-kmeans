@@ -1,118 +1,122 @@
-import pandas as pd
 import numpy as np
-import streamlit as st
+import pandas as pd
 from sklearn.cluster import KMeans
+from sklearn.metrics import davies_bouldin_score, silhouette_score
 from sklearn.preprocessing import StandardScaler
-import plotly.express as px
+import streamlit as st
 
-st.set_page_config(page_title="Customer Segmentation & Behavior Mining", layout="wide")
-st.title("Customer Behavior Mining & Segmentation Dashboard")
-st.caption("Data Mining & Warehousing: Unit II (Pre-processing/Visualization) & Unit IV (Partitioning Clustering)")
+st.set_page_config(
+    page_title="Customer Behavior Mining", layout="wide"
+)
+st.title("🛒 Customer Behavior Mining & Segmentation")
 
-# Function to generate customer dataset
-@st.cache_data
-def get_customer_data():
-    np.random.seed(42)
-    n = 5000
-    return pd.DataFrame({
-        "Customer_ID": [f"CUST_{i+1:05d}" for i in range(n)],
-        "Age": np.random.randint(18, 70, size=n),
-        "Annual_Income_k$": np.random.randint(15, 140, size=n),
-        "Spending_Score_1_to_100": np.random.randint(1, 100, size=n),
-        "Annual_Purchases": np.random.randint(1, 50, size=n)
-    })
+# --- 1. USER INPUTS / PROMPTS IN SIDEBAR ---
+st.sidebar.header("Customer & Order Details")
 
-# Sidebar Controls
-st.sidebar.header("Data Configuration")
-data_source = st.sidebar.radio(
-    "Data Source:",
-    ("Use Built-in 5,000 Records", "Upload Custom CSV File")
+# Order Date & Time
+order_date = st.sidebar.date_input("Date of Order")
+order_time = st.sidebar.time_input("Time of Order")
+order_datetime = pd.to_datetime(f"{order_date} {order_time}")
+
+# Financial Metrics & Salary Prompt
+monthly_income = st.sidebar.number_input(
+    "Monthly Income (₹)", min_value=1000.0, value=50000.0, step=1000.0
+)
+total_spend = st.sidebar.number_input(
+    "Total Order / Spend Amount (₹)",
+    min_value=0.0,
+    value=15000.0,
+    step=500.0,
 )
 
-df = None
-if data_source == "Upload Custom CSV File":
-    uploaded = st.sidebar.file_uploader("Upload CSV", type=["csv"])
-    if uploaded is not None:
-        df = pd.read_csv(uploaded)
-        st.sidebar.success(f"Loaded {len(df):,} records successfully!")
-    else:
-        st.info("Awaiting CSV file...")
+# Derived Feature: Salary Exhausted in %
+salary_exhausted_pct = (total_spend / monthly_income) * 100
+st.sidebar.metric(
+    label="Salary Exhausted", value=f"{salary_exhausted_pct:.2f}%"
+)
+
+# Additional behavioral features
+purchase_frequency = st.sidebar.slider(
+    "Purchases per Month", min_value=1, max_value=30, value=5
+)
+
+# --- 2. SAMPLE DATA ENGINE ---
+# Synthesizing or loading dataset including the new derived features
+np.random.seed(42)
+n_samples = 300
+
+sample_incomes = np.random.uniform(20000, 120000, n_samples)
+sample_spends = sample_incomes * np.random.uniform(0.05, 0.70, n_samples)
+sample_exhausted = (sample_spends / sample_incomes) * 100
+sample_freq = np.random.randint(1, 25, n_samples)
+
+df = pd.DataFrame(
+    {
+        "Monthly_Income": sample_incomes,
+        "Total_Spend": sample_spends,
+        "Salary_Exhausted_Pct": sample_exhausted,
+        "Purchase_Frequency": sample_freq,
+    }
+)
+
+# --- 3. MODEL TRAINING & VALIDATION METRICS ---
+features = [
+    "Monthly_Income",
+    "Total_Spend",
+    "Salary_Exhausted_Pct",
+    "Purchase_Frequency",
+]
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(df[features])
+
+k = 3
+kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+df["Cluster"] = kmeans.fit_predict(X_scaled)
+
+# Clustering Quality Metrics ("Accuracy" substitutes for unsupervised models)
+sil_score = silhouette_score(X_scaled, df["Cluster"])
+db_index = davies_bouldin_score(X_scaled, df["Cluster"])
+
+# --- 4. DISPLAY DASHBOARD METRICS ---
+col1, col2, col3 = st.columns(3)
+col1.metric("Order Timestamp", order_datetime.strftime("%d %b %Y, %I:%M %p"))
+col2.metric("Salary Exhausted (%)", f"{salary_exhausted_pct:.2f}%")
+col3.metric("Silhouette Score (Quality)", f"{sil_score:.3f}")
+
+st.info(
+    f"**Model Evaluation Note:** Clustering algorithms use **Silhouette Score** ({sil_score:.3f}) "
+    f"and **Davies-Bouldin Index** ({db_index:.3f}) to assess grouping separation and cluster tightness."
+)
+
+# --- 5. PREDICTING THE NEW CUSTOMER ---
+input_df = pd.DataFrame(
+    [
+        {
+            "Monthly_Income": monthly_income,
+            "Total_Spend": total_spend,
+            "Salary_Exhausted_Pct": salary_exhausted_pct,
+            "Purchase_Frequency": purchase_frequency,
+        }
+    ]
+)
+
+input_scaled = scaler.transform(input_df[features])
+predicted_cluster = kmeans.predict(input_scaled)[0]
+
+st.subheader(f"Assigned Segment: **Cluster {predicted_cluster}**")
+
+# Contextual interpretation based on salary exhaustion
+if salary_exhausted_pct > 50:
+    st.warning(
+        "High Spender / High Exhaustion: Customer spends a substantial portion of their income."
+    )
+elif salary_exhausted_pct < 20:
+    st.success(
+        "Conservative Spender: Low exhaustion rate, high potential for targeted upselling."
+    )
 else:
-    df = get_customer_data()
+    st.info(
+        "Balanced Spender: Moderate expenditure relative to overall income."
+    )
 
-if df is not None:
-    # 1. Dataset Overview
-    st.markdown("### 1. Data Exploration & Overview (Unit II)")
-    with st.expander("View Raw Data Preview"):
-        st.dataframe(df.head(100), use_container_width=True)
-        st.caption("Displaying initial 100 rows preview for browser speed optimization.")
-        
-        # One-click download button for full 5,000 dataset
-        csv_bytes = df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Full 5,000 Records Dataset (.csv)",
-            data=csv_bytes,
-            file_name="customer_segmentation_5000_records.csv",
-            mime="text/csv",
-            help="Click to download the complete 5,000 dataset for offline inspection or WEKA analysis."
-        )
-
-
-    # 2. Pre-processing & Feature Selection
-    numeric_cols = df.select_dtypes(include=["float64", "int64"]).columns.tolist()
-    if len(numeric_cols) >= 2:
-        st.sidebar.markdown("---")
-        st.sidebar.header("Clustering Parameters (Unit IV)")
-        
-        feat_x = st.sidebar.selectbox("Feature X-Axis:", numeric_cols, index=1 if len(numeric_cols) > 1 else 0)
-        feat_y = st.sidebar.selectbox("Feature Y-Axis:", numeric_cols, index=2 if len(numeric_cols) > 2 else 0)
-        k_clusters = st.sidebar.slider("Number of Clusters (K):", min_value=2, max_value=8, value=4)
-
-        # Standard Scaler (Data Pre-processing: Normalization)
-        X = df[[feat_x, feat_y]].dropna()
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-
-        # K-Means Clustering Algorithm
-        kmeans = KMeans(n_clusters=k_clusters, random_state=42, n_init=10)
-        clusters = kmeans.fit_predict(X_scaled)
-        
-        df_clustered = df.loc[X.index].copy()
-        df_clustered["Cluster_ID"] = [f"Cluster {c}" for c in clusters]
-
-        # 3. Interactive Visualization
-        st.markdown("### 2. K-Means Cluster Distribution (Unit IV)")
-        fig = px.scatter(
-            df_clustered,
-            x=feat_x,
-            y=feat_y,
-            color="Cluster_ID",
-            hover_data=[df_clustered.columns[0]],
-            title=f"Partitioned Clustering Analysis (K={k_clusters}) on 5,000 Records",
-            template="plotly_white"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        # 4. Cluster Profile Insights
-        st.markdown("### 3. Discovered Cluster Profiles & Behavioral Insights")
-        summary = df_clustered.groupby("Cluster_ID")[[feat_x, feat_y]].mean().reset_index()
-        summary["Customer Count"] = df_clustered["Cluster_ID"].value_counts().values
-        st.dataframe(summary, use_container_width=True)
-
-        # 5. Live Prediction for Single Customer
-       # 5. Live Prediction for Single Customer (Direct Type Boxes)
-        st.markdown("---")
-        st.subheader("Predict Segment for a New Data Instance")
-        
-        col_a, col_b = st.columns(2)
-        val_x_str = col_a.text_input(f"Enter {feat_x}:", value=f"{df[feat_x].mean():.2f}")
-        val_y_str = col_b.text_input(f"Enter {feat_y}:", value=f"{df[feat_y].mean():.2f}")
-
-        try:
-            val_x = float(val_x_str)
-            val_y = float(val_y_str)
-            new_point_scaled = scaler.transform([[val_x, val_y]])
-            predicted_cluster = kmeans.predict(new_point_scaled)[0]
-            st.success(f"This record is classified into: **Cluster {predicted_cluster}**")
-        except ValueError:
-            st.warning("Please enter a valid numeric value.")
+st.dataframe(df.head())
