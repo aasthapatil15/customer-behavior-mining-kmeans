@@ -5,6 +5,7 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Customer Behavior Mining & Segmentation", layout="wide")
@@ -18,7 +19,6 @@ def get_customer_data():
     n = 5000
     base_date = datetime(2026, 1, 1)
     
-    # Generate random timestamps over a 300-day window
     random_days = np.random.randint(0, 300, size=n)
     random_seconds = np.random.randint(0, 86400, size=n)
     timestamps = [base_date + timedelta(days=int(d), seconds=int(s)) for d, s in zip(random_days, random_seconds)]
@@ -85,7 +85,6 @@ if df is not None:
 
     # 2. Pre-processing & Feature Selection
     numeric_cols = df.select_dtypes(include=["float64", "int64"]).columns.tolist()
-    # Filter out derived target from standard clustering picker if desired
     clustering_cols = [c for c in numeric_cols if c != "Salary_Exhausted_Pct"]
     
     if len(clustering_cols) >= 2:
@@ -105,7 +104,7 @@ if df is not None:
         kmeans = KMeans(n_clusters=k_clusters, random_state=42, n_init=10)
         clusters = kmeans.fit_predict(X_scaled)
         
-        # Calculate Clustering Evaluation Metric (Unit IV: Evaluation of Clustering)
+        # Calculate Clustering Evaluation Metric
         sample_indices = np.random.choice(len(X_scaled), size=min(1000, len(X_scaled)), replace=False)
         sil_score = silhouette_score(X_scaled[sample_indices], clusters[sample_indices])
         cohesion_accuracy_pct = round(((sil_score + 1) / 2) * 100, 2)
@@ -145,44 +144,71 @@ if df is not None:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # 4. NEW: Salary Exhaustion Analysis Section (Unit II & IV)
+        # 4. Salary Exhaustion with Threshold Breach Alert (Unit II)
         if "Salary_Exhausted_Pct" in df_clustered.columns:
             st.markdown("---")
-            st.markdown("### 3. Salary Exhaustion & Financial Burn-Rate Analysis (Unit II)")
-            st.caption("Derived behavioral metric analyzing the proportion of salary/disposable budget exhausted across mined clusters.")
+            st.markdown("### 3. Salary Exhaustion & Threshold Warning Analysis")
+            st.caption("Define a safe spending limit threshold. Customers exceeding this limit trigger automated financial risk warnings.")
+
+            # Interactive Threshold Slider
+            exhaustion_threshold = st.slider(
+                "Set Safe Salary Exhaustion Limit (% Threshold):", 
+                min_value=40, 
+                max_value=95, 
+                value=75,
+                help="Customers with salary exhaustion exceeding this threshold are flagged as High-Risk Budget Breaches."
+            )
+
+            # Calculate breach stats
+            df_clustered["Exhaustion_Breach"] = df_clustered["Salary_Exhausted_Pct"] > exhaustion_threshold
+            breached_count = int(df_clustered["Exhaustion_Breach"].sum())
+            breached_pct = (breached_count / len(df_clustered)) * 100
+
+            # Alert Cards
+            if breached_pct > 30:
+                st.error(f"⚠️ **High Financial Risk Alert:** {breached_count:,} out of {len(df_clustered):,} customers ({breached_pct:.1f}%) have breached your safety limit of {exhaustion_threshold}%!")
+            else:
+                st.warning(f"⚡ **Threshold Monitoring:** {breached_count:,} customers ({breached_pct:.1f}%) are currently operating above the {exhaustion_threshold}% limit.")
 
             col_chart1, col_chart2 = st.columns(2)
 
             with col_chart1:
-                # Box Plot: Salary Exhaustion across Clusters
-                fig_box = px.box(
-                    df_clustered,
-                    x="Cluster_ID",
+                # Scatter/Violin with Threshold Cutoff Line
+                fig_thresh = px.scatter(
+                    df_clustered.sample(1000, random_state=42),
+                    x="Annual_Income_k$",
                     y="Salary_Exhausted_Pct",
-                    color="Cluster_ID",
-                    title="Salary Exhausted (%) Distribution by Cluster",
-                    labels={"Salary_Exhausted_Pct": "Salary Exhausted (%)", "Cluster_ID": "Cluster"},
+                    color="Exhaustion_Breach",
+                    color_discrete_map={False: "#319795", True: "#E53E3E"},
+                    title=f"Salary Exhaustion vs. Income (Limit: {exhaustion_threshold}%)",
+                    labels={"Salary_Exhausted_Pct": "Salary Exhausted (%)", "Exhaustion_Breach": "Exceeded Limit?"},
                     template="plotly_white"
                 )
-                st.plotly_chart(fig_box, use_container_width=True)
+                fig_thresh.add_hline(
+                    y=exhaustion_threshold, 
+                    line_dash="dash", 
+                    line_color="red", 
+                    annotation_text=f"Warning Threshold ({exhaustion_threshold}%)",
+                    annotation_position="bottom right"
+                )
+                st.plotly_chart(fig_thresh, use_container_width=True)
 
             with col_chart2:
-                # Bar Chart: Distribution of Burn-Rate Categories
-                fig_burn = px.histogram(
-                    df_clustered,
+                # Bar Chart of Breach Rate by Cluster
+                breach_by_cluster = df_clustered.groupby("Cluster_ID")["Exhaustion_Breach"].mean().reset_index()
+                breach_by_cluster["Breach_Rate_%"] = breach_by_cluster["Exhaustion_Breach"] * 100
+
+                fig_bar = px.bar(
+                    breach_by_cluster,
                     x="Cluster_ID",
-                    color="Burn_Rate_Category",
-                    barmode="group",
-                    title="Financial Burn-Rate Breakdown per Cluster",
-                    labels={"Cluster_ID": "Cluster", "Burn_Rate_Category": "Burn Rate Risk"},
-                    color_discrete_map={
-                        "Conservative (<40%)": "#2b6cb0",
-                        "Moderate (40-70%)": "#dd6b20",
-                        "High Burn (>70%)": "#e53e3e"
-                    },
+                    y="Breach_Rate_%",
+                    color="Breach_Rate_%",
+                    color_continuous_scale=["#38A169", "#DD6B20", "#E53E3E"],
+                    title=f"% of Customers Breaching Limit ({exhaustion_threshold}%) per Cluster",
+                    labels={"Breach_Rate_%": "Breach Rate (%)", "Cluster_ID": "Cluster"},
                     template="plotly_white"
                 )
-                st.plotly_chart(fig_burn, use_container_width=True)
+                st.plotly_chart(fig_bar, use_container_width=True)
 
         # 5. Cluster Profile Insights
         st.markdown("### 4. Discovered Cluster Profiles & Behavioral Insights")
@@ -194,7 +220,7 @@ if df is not None:
         summary["Customer Count"] = df_clustered["Cluster_ID"].value_counts().values
         st.dataframe(summary, use_container_width=True)
 
-        # 6. Live Prediction with Salary Exhausted Calculation
+        # 6. Live Prediction with Threshold Alert
         st.markdown("---")
         st.subheader("5. Predict Segment for a New Data Instance")
         
@@ -209,18 +235,36 @@ if df is not None:
             predicted_cluster = kmeans.predict(new_point_scaled)[0]
             st.success(f"This record is classified into: **Cluster {predicted_cluster}**")
 
-            # Salary Exhausted Prompt / Alert
+            # Dynamic Gauge & Limit Warning for Live Prediction
             if "Spending_Score_1_to_100" in [feat_x, feat_y]:
                 score_val = val_y if feat_y == "Spending_Score_1_to_100" else val_x
                 exhausted_pct = min(100.0, max(0.0, score_val))
                 
-                st.markdown("#### Financial Behavioral Diagnostic:")
-                if exhausted_pct >= 70:
-                    st.error(f"🚨 **Salary Exhausted Ratio: {exhausted_pct:.1f}%** — High Financial Burn Rate! Customer is spending an aggressive portion of disposable income.")
-                elif exhausted_pct >= 40:
-                    st.warning(f"⚖️ **Salary Exhausted Ratio: {exhausted_pct:.1f}%** — Moderate Financial Utilization. Balanced budget behavior.")
+                st.markdown("#### Real-Time Salary Exhaustion Gauge & Limit Check:")
+                
+                # Plotly Gauge Indicator
+                gauge_color = "#E53E3E" if exhausted_pct > exhaustion_threshold else "#38A169"
+                fig_gauge = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=exhausted_pct,
+                    title={'text': f"Exhaustion % (Limit: {exhaustion_threshold}%)"},
+                    gauge={
+                        'axis': {'range': [0, 100]},
+                        'bar': {'color': gauge_color},
+                        'threshold': {
+                            'line': {'color': "red", 'width': 4},
+                            'thickness': 0.8,
+                            'value': exhaustion_threshold
+                        }
+                    }
+                ))
+                fig_gauge.update_layout(height=280, margin=dict(l=20, r=20, t=30, b=10))
+                st.plotly_chart(fig_gauge, use_container_width=True)
+
+                if exhausted_pct > exhaustion_threshold:
+                    st.error(f"🚨 **CRITICAL LIMIT BREACH!** Customer has exhausted **{exhausted_pct:.1f}%** of their salary, exceeding your defined threshold of **{exhaustion_threshold}%**!")
                 else:
-                    st.info(f"💰 **Salary Exhausted Ratio: {exhausted_pct:.1f}%** — Conservative Spender. High financial savings reserve.")
+                    st.success(f"✅ **SAFE OPERATING BUDGET:** Salary exhaustion is **{exhausted_pct:.1f}%**, which is within the safe threshold limit of **{exhaustion_threshold}%**.")
         except ValueError:
             st.warning("Please enter a valid numeric value.")
     else:
