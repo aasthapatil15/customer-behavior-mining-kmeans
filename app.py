@@ -51,6 +51,15 @@ else:
     df = get_customer_data()
 
 if df is not None:
+    # Feature Construction: Salary Exhaustion % (Unit II: Data Transformation)
+    if "Annual_Income_k$" in df.columns and "Spending_Score_1_to_100" in df.columns:
+        df["Salary_Exhausted_Pct"] = df["Spending_Score_1_to_100"].astype(float)
+        df["Burn_Rate_Category"] = pd.cut(
+            df["Salary_Exhausted_Pct"],
+            bins=[-1, 40, 70, 101],
+            labels=["Conservative (<40%)", "Moderate (40-70%)", "High Burn (>70%)"]
+        )
+
     # 1. Dataset Overview
     st.markdown("### 1. Data Exploration & Overview (Unit II)")
     c1, c2, c3, c4 = st.columns(4)
@@ -58,13 +67,12 @@ if df is not None:
     c2.metric("Features Extracted", len(df.columns))
     c3.metric("Missing Values", int(df.isnull().sum().sum()))
     
-    # Check if temporal data exists
     if "Order_DateTime" in df.columns:
         c4.metric("Temporal Log Range", "2026 Season")
     else:
         c4.metric("Temporal Log", "N/A")
 
-    with st.expander("View Raw Data Preview (with Order Date & Time)"):
+    with st.expander("View Raw Data Preview (with Order Date, Time & Salary Exhaustion)"):
         st.dataframe(df.head(100), use_container_width=True)
         st.caption("Displaying initial 100 rows preview for browser speed optimization.")
         csv_bytes = df.to_csv(index=False).encode('utf-8')
@@ -77,12 +85,15 @@ if df is not None:
 
     # 2. Pre-processing & Feature Selection
     numeric_cols = df.select_dtypes(include=["float64", "int64"]).columns.tolist()
-    if len(numeric_cols) >= 2:
+    # Filter out derived target from standard clustering picker if desired
+    clustering_cols = [c for c in numeric_cols if c != "Salary_Exhausted_Pct"]
+    
+    if len(clustering_cols) >= 2:
         st.sidebar.markdown("---")
         st.sidebar.header("Clustering Parameters (Unit IV)")
         
-        feat_x = st.sidebar.selectbox("Feature X-Axis:", numeric_cols, index=1 if len(numeric_cols) > 1 else 0)
-        feat_y = st.sidebar.selectbox("Feature Y-Axis:", numeric_cols, index=2 if len(numeric_cols) > 2 else 0)
+        feat_x = st.sidebar.selectbox("Feature X-Axis:", clustering_cols, index=1 if len(clustering_cols) > 1 else 0)
+        feat_y = st.sidebar.selectbox("Feature Y-Axis:", clustering_cols, index=2 if len(clustering_cols) > 2 else 0)
         k_clusters = st.sidebar.slider("Number of Clusters (K):", min_value=2, max_value=8, value=4)
 
         # Standard Scaler (Data Pre-processing: Normalization)
@@ -95,7 +106,6 @@ if df is not None:
         clusters = kmeans.fit_predict(X_scaled)
         
         # Calculate Clustering Evaluation Metric (Unit IV: Evaluation of Clustering)
-        # We sample 1000 rows for fast real-time silhouette calculation
         sample_indices = np.random.choice(len(X_scaled), size=min(1000, len(X_scaled)), replace=False)
         sil_score = silhouette_score(X_scaled[sample_indices], clusters[sample_indices])
         cohesion_accuracy_pct = round(((sil_score + 1) / 2) * 100, 2)
@@ -103,7 +113,7 @@ if df is not None:
         df_clustered = df.loc[X.index].copy()
         df_clustered["Cluster_ID"] = [f"Cluster {c}" for c in clusters]
 
-        # 3. Interactive Visualization
+        # 3. Interactive Clustering Visualization
         st.markdown("### 2. K-Means Cluster Distribution & Evaluation (Unit IV)")
         
         m1, m2 = st.columns(2)
@@ -121,6 +131,8 @@ if df is not None:
         hover_cols = ["Customer_ID"]
         if "Order_DateTime" in df_clustered.columns:
             hover_cols.append("Order_DateTime")
+        if "Salary_Exhausted_Pct" in df_clustered.columns:
+            hover_cols.append("Salary_Exhausted_Pct")
 
         fig = px.scatter(
             df_clustered,
@@ -133,15 +145,58 @@ if df is not None:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # 4. Cluster Profile Insights
-        st.markdown("### 3. Discovered Cluster Profiles & Behavioral Insights")
-        summary = df_clustered.groupby("Cluster_ID")[[feat_x, feat_y]].mean().reset_index()
+        # 4. NEW: Salary Exhaustion Analysis Section (Unit II & IV)
+        if "Salary_Exhausted_Pct" in df_clustered.columns:
+            st.markdown("---")
+            st.markdown("### 3. Salary Exhaustion & Financial Burn-Rate Analysis (Unit II)")
+            st.caption("Derived behavioral metric analyzing the proportion of salary/disposable budget exhausted across mined clusters.")
+
+            col_chart1, col_chart2 = st.columns(2)
+
+            with col_chart1:
+                # Box Plot: Salary Exhaustion across Clusters
+                fig_box = px.box(
+                    df_clustered,
+                    x="Cluster_ID",
+                    y="Salary_Exhausted_Pct",
+                    color="Cluster_ID",
+                    title="Salary Exhausted (%) Distribution by Cluster",
+                    labels={"Salary_Exhausted_Pct": "Salary Exhausted (%)", "Cluster_ID": "Cluster"},
+                    template="plotly_white"
+                )
+                st.plotly_chart(fig_box, use_container_width=True)
+
+            with col_chart2:
+                # Bar Chart: Distribution of Burn-Rate Categories
+                fig_burn = px.histogram(
+                    df_clustered,
+                    x="Cluster_ID",
+                    color="Burn_Rate_Category",
+                    barmode="group",
+                    title="Financial Burn-Rate Breakdown per Cluster",
+                    labels={"Cluster_ID": "Cluster", "Burn_Rate_Category": "Burn Rate Risk"},
+                    color_discrete_map={
+                        "Conservative (<40%)": "#2b6cb0",
+                        "Moderate (40-70%)": "#dd6b20",
+                        "High Burn (>70%)": "#e53e3e"
+                    },
+                    template="plotly_white"
+                )
+                st.plotly_chart(fig_burn, use_container_width=True)
+
+        # 5. Cluster Profile Insights
+        st.markdown("### 4. Discovered Cluster Profiles & Behavioral Insights")
+        summary_cols = [feat_x, feat_y]
+        if "Salary_Exhausted_Pct" in df_clustered.columns and "Salary_Exhausted_Pct" not in summary_cols:
+            summary_cols.append("Salary_Exhausted_Pct")
+            
+        summary = df_clustered.groupby("Cluster_ID")[summary_cols].mean().reset_index()
         summary["Customer Count"] = df_clustered["Cluster_ID"].value_counts().values
         st.dataframe(summary, use_container_width=True)
 
-        # 5. Live Prediction with Salary Exhausted Calculation
+        # 6. Live Prediction with Salary Exhausted Calculation
         st.markdown("---")
-        st.subheader("Predict Segment for a New Data Instance")
+        st.subheader("5. Predict Segment for a New Data Instance")
         
         col_a, col_b = st.columns(2)
         val_x_str = col_a.text_input(f"Enter {feat_x}:", value=f"{df[feat_x].mean():.2f}")
@@ -155,10 +210,8 @@ if df is not None:
             st.success(f"This record is classified into: **Cluster {predicted_cluster}**")
 
             # Salary Exhausted Prompt / Alert
-            # Identify spending score or purchase ratio
             if "Spending_Score_1_to_100" in [feat_x, feat_y]:
                 score_val = val_y if feat_y == "Spending_Score_1_to_100" else val_x
-                # Spending score directly reflects spending propensity / % budget exhausted
                 exhausted_pct = min(100.0, max(0.0, score_val))
                 
                 st.markdown("#### Financial Behavioral Diagnostic:")
